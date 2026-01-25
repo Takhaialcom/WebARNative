@@ -9,6 +9,7 @@
             margin: 0;
             overflow: hidden;
             font-family: Arial, sans-serif;
+            background: #000;
         }
         
         #container {
@@ -31,7 +32,7 @@
             top: 20px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(0, 0, 0, 0.8);
             color: white;
             padding: 15px 25px;
             border-radius: 10px;
@@ -44,11 +45,12 @@
             bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(0, 0, 0, 0.8);
             color: #0ff;
             padding: 10px 20px;
             border-radius: 5px;
-            font-size: 14px;
+            font-size: 12px;
+            max-width: 90%;
         }
         
         #startButton {
@@ -65,10 +67,26 @@
             cursor: pointer;
             pointer-events: auto;
             box-shadow: 0 4px 15px rgba(0, 128, 255, 0.4);
+            z-index: 10;
         }
         
-        #startButton:hover {
+        #startButton:active {
             background: #0066cc;
+            transform: translate(-50%, -50%) scale(0.95);
+        }
+        
+        #debugInfo {
+            position: absolute;
+            top: 80px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #0f0;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 10px;
+            font-family: monospace;
+            max-width: 90%;
+            word-wrap: break-word;
         }
         
         .hidden {
@@ -79,15 +97,34 @@
 <body>
     <div id="container"></div>
     <div id="overlay">
-        <button id="startButton">Start AR Experience</button>
+        <button id="startButton">Start AR Portal</button>
         <div id="instructions" class="hidden">
-            Move your device to detect surfaces, then tap to place portal
+            Move your device slowly to detect surfaces
         </div>
-        <div id="status" class="hidden">Initializing AR...</div>
+        <div id="status">Checking device compatibility...</div>
+        <div id="debugInfo"></div>
     </div>
 
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.module.js"
+        }
+    }
+    </script>
+
     <script type="module">
-        import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.module.js';
+        import * as THREE from 'three';
+
+        // Debug logging
+        function log(message, isError = false) {
+            const debugInfo = document.getElementById('debugInfo');
+            const timestamp = new Date().toLocaleTimeString();
+            const color = isError ? '#f00' : '#0f0';
+            debugInfo.innerHTML += `<div style="color:${color}">[${timestamp}] ${message}</div>`;
+            debugInfo.scrollTop = debugInfo.scrollHeight;
+            console.log(message);
+        }
 
         // Configuration
         const CONFIG = {
@@ -113,40 +150,99 @@
         // Portal destination scene
         let portalScene, portalCamera, portalTexture;
 
+        function updateStatus(message) {
+            status.textContent = message;
+            status.classList.remove('hidden');
+            log(message);
+        }
+
+        // Check WebXR support
+        function checkWebXRSupport() {
+            log('Checking WebXR support...');
+            
+            if (!navigator.xr) {
+                log('WebXR not available', true);
+                updateStatus('WebXR not supported. Use Chrome on Android or Safari 15+ on iOS');
+                return false;
+            }
+            
+            log('WebXR API found');
+            
+            navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
+                if (supported) {
+                    log('AR mode supported!');
+                    updateStatus('AR supported! Tap button to start');
+                } else {
+                    log('AR mode not supported', true);
+                    updateStatus('AR not supported on this device');
+                }
+            }).catch((error) => {
+                log('Error checking AR support: ' + error.message, true);
+                updateStatus('Error checking AR support');
+            });
+            
+            return true;
+        }
+
         function init() {
+            log('Initializing Three.js...');
             const container = document.getElementById('container');
 
-            // Scene setup
-            scene = new THREE.Scene();
+            try {
+                // Scene setup
+                scene = new THREE.Scene();
+                log('Scene created');
 
-            // Camera setup
-            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
+                // Camera setup
+                camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
+                log('Camera created');
 
-            // Renderer setup
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-            renderer.setPixelRatio(window.devicePixelRatio);
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.xr.enabled = true;
-            container.appendChild(renderer.domElement);
+                // Renderer setup
+                renderer = new THREE.WebGLRenderer({ 
+                    antialias: true, 
+                    alpha: true,
+                    powerPreference: "high-performance"
+                });
+                renderer.setPixelRatio(window.devicePixelRatio);
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.xr.enabled = true;
+                container.appendChild(renderer.domElement);
+                log('Renderer created and added to DOM');
 
-            // Lighting
-            const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
-            light.position.set(0.5, 1, 0.25);
-            scene.add(light);
+                // Lighting
+                const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+                light.position.set(0.5, 1, 0.25);
+                scene.add(light);
+                log('Lighting added');
 
-            // Create reticle for plane detection
-            createReticle();
+                // Create reticle
+                createReticle();
+                log('Reticle created');
 
-            // Create portal destination scene
-            createPortalDestination();
+                // Create portal destination
+                createPortalDestination();
+                log('Portal destination created');
 
-            // Window resize handler
-            window.addEventListener('resize', onWindowResize);
+                // Window resize handler
+                window.addEventListener('resize', onWindowResize);
+                
+                log('Initialization complete!');
+                return true;
+            } catch (error) {
+                log('Error during initialization: ' + error.message, true);
+                updateStatus('Error: ' + error.message);
+                return false;
+            }
         }
 
         function createReticle() {
             const geometry = new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2);
-            const material = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+            const material = new THREE.MeshBasicMaterial({ 
+                color: 0xffffff, 
+                side: THREE.DoubleSide,
+                opacity: 0.8,
+                transparent: true
+            });
             reticle = new THREE.Mesh(geometry, material);
             reticle.matrixAutoUpdate = false;
             reticle.visible = false;
@@ -158,20 +254,20 @@
             portalScene = new THREE.Scene();
             portalScene.background = new THREE.Color(0x87ceeb);
 
-            // Add some objects to the portal world
+            // Add lighting
             const portalLight = new THREE.DirectionalLight(0xffffff, 1);
             portalLight.position.set(5, 10, 5);
             portalScene.add(portalLight);
-            portalScene.add(new THREE.AmbientLight(0x404040));
+            portalScene.add(new THREE.AmbientLight(0x404040, 0.5));
 
-            // Add a colorful environment
+            // Add ground
             const groundGeo = new THREE.PlaneGeometry(20, 20);
             const groundMat = new THREE.MeshStandardMaterial({ color: 0x2d5016 });
             const ground = new THREE.Mesh(groundGeo, groundMat);
             ground.rotation.x = -Math.PI / 2;
             portalScene.add(ground);
 
-            // Add some cubes
+            // Add colorful cubes
             for (let i = 0; i < 10; i++) {
                 const cubeGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
                 const cubeMat = new THREE.MeshStandardMaterial({ 
@@ -191,11 +287,16 @@
             portalCamera.position.set(0, 1.6, 3);
             portalCamera.lookAt(0, 1, 0);
 
-            // Create render target for portal
-            portalTexture = new THREE.WebGLRenderTarget(512, 512);
+            // Create render target
+            portalTexture = new THREE.WebGLRenderTarget(512, 512, {
+                minFilter: THREE.LinearFilter,
+                magFilter: THREE.LinearFilter
+            });
         }
 
         function createPortal(position) {
+            log('Creating portal at position: ' + JSON.stringify(position));
+            
             const portalGroup = new THREE.Group();
             portalGroup.position.copy(position);
 
@@ -211,7 +312,7 @@
             const frame = new THREE.Mesh(frameGeo, frameMat);
             portalGroup.add(frame);
 
-            // Portal surface (shows destination)
+            // Portal surface
             const surfaceGeo = new THREE.CircleGeometry(CONFIG.portalSize / 2, 32);
             const surfaceMat = new THREE.MeshBasicMaterial({ 
                 map: portalTexture.texture,
@@ -230,18 +331,17 @@
             const glow = new THREE.Mesh(glowGeo, glowMat);
             portalGroup.add(glow);
 
-            // Add point light
+            // Point light
             const portalLight = new THREE.PointLight(CONFIG.portalColor, 2, 5);
             portalLight.position.set(0, 0, 0.5);
             portalGroup.add(portalLight);
 
-            // Add particle system
+            // Add particles
             createPortalParticles(portalGroup);
 
             scene.add(portalGroup);
             portal = portalGroup;
 
-            // Store references for animation
             portal.userData = {
                 frame: frame,
                 surface: surface,
@@ -250,10 +350,11 @@
                 initialScale: portalGroup.scale.clone()
             };
 
-            updateStatus('Portal placed! Walk through to teleport');
+            log('Portal created successfully!');
+            updateStatus('Portal placed! View the magical world');
+            
             setTimeout(() => {
                 instructions.classList.add('hidden');
-                status.classList.add('hidden');
             }, 3000);
         }
 
@@ -319,12 +420,12 @@
         function updatePortalView() {
             if (!portal || !portalCamera) return;
 
-            // Render portal destination to texture
+            // Render portal destination
             renderer.setRenderTarget(portalTexture);
             renderer.render(portalScene, portalCamera);
             renderer.setRenderTarget(null);
 
-            // Simple camera movement in portal world
+            // Animate camera in portal world
             const time = clock.getElapsedTime();
             portalCamera.position.x = Math.sin(time * 0.5) * 2;
             portalCamera.position.z = 3 + Math.cos(time * 0.3);
@@ -333,6 +434,7 @@
 
         function onSelect() {
             if (reticle.visible && !portalPlaced) {
+                log('User tapped to place portal');
                 const position = new THREE.Vector3();
                 position.setFromMatrixPosition(reticle.matrix);
                 createPortal(position);
@@ -347,11 +449,6 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        function updateStatus(message) {
-            status.textContent = message;
-            status.classList.remove('hidden');
-        }
-
         function animate() {
             renderer.setAnimationLoop(render);
         }
@@ -362,15 +459,23 @@
                 const session = renderer.xr.getSession();
 
                 if (hitTestSourceRequested === false) {
+                    log('Requesting hit test source...');
+                    
                     session.requestReferenceSpace('viewer').then((referenceSpace) => {
                         session.requestHitTestSource({ space: referenceSpace }).then((source) => {
                             hitTestSource = source;
+                            log('Hit test source acquired');
+                        }).catch((error) => {
+                            log('Error getting hit test source: ' + error.message, true);
                         });
+                    }).catch((error) => {
+                        log('Error getting reference space: ' + error.message, true);
                     });
 
                     session.addEventListener('end', () => {
                         hitTestSourceRequested = false;
                         hitTestSource = null;
+                        log('AR session ended');
                     });
 
                     hitTestSourceRequested = true;
@@ -385,13 +490,12 @@
                         const hit = hitTestResults[0];
                         reticle.visible = true;
                         reticle.matrix.fromArray(hit.getPose(referenceSpace).transform.matrix);
-                        updateStatus('Tap to place portal');
+                        updateStatus('Tap screen to place portal');
                     } else {
                         reticle.visible = false;
                     }
                 }
 
-                // Animate portal
                 animatePortal();
                 updatePortalView();
             }
@@ -400,37 +504,56 @@
         }
 
         // Start button handler
-        startButton.addEventListener('click', () => {
+        startButton.addEventListener('click', async () => {
+            log('Start button clicked');
             startButton.classList.add('hidden');
             
-            if (navigator.xr) {
-                navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
-                    if (supported) {
-                        const sessionInit = {
-                            requiredFeatures: ['hit-test'],
-                            optionalFeatures: ['dom-overlay'],
-                            domOverlay: { root: document.getElementById('overlay') }
-                        };
+            try {
+                if (!navigator.xr) {
+                    throw new Error('WebXR not available');
+                }
 
-                        navigator.xr.requestSession('immersive-ar', sessionInit).then((session) => {
-                            renderer.xr.setSession(session);
-                            session.addEventListener('select', onSelect);
-                            updateStatus('AR Session started');
-                        }).catch((error) => {
-                            updateStatus('Error starting AR: ' + error.message);
-                        });
-                    } else {
-                        updateStatus('AR not supported on this device');
-                    }
-                });
-            } else {
-                updateStatus('WebXR not available. Use Chrome on Android or Safari on iOS 15+');
+                const supported = await navigator.xr.isSessionSupported('immersive-ar');
+                
+                if (!supported) {
+                    throw new Error('AR not supported on this device');
+                }
+
+                log('Requesting AR session...');
+                updateStatus('Starting AR session...');
+
+                const sessionInit = {
+                    requiredFeatures: ['hit-test'],
+                    optionalFeatures: ['dom-overlay'],
+                    domOverlay: { root: document.getElementById('overlay') }
+                };
+
+                const session = await navigator.xr.requestSession('immersive-ar', sessionInit);
+                log('AR session granted');
+                
+                await renderer.xr.setSession(session);
+                log('Renderer XR session set');
+                
+                session.addEventListener('select', onSelect);
+                updateStatus('AR started! Move your device');
+                
+            } catch (error) {
+                log('Error starting AR: ' + error.message, true);
+                updateStatus('Error: ' + error.message);
+                startButton.classList.remove('hidden');
+                startButton.textContent = 'Retry AR Start';
             }
         });
 
-        // Initialize
-        init();
-        animate();
+        // Initialize on load
+        window.addEventListener('load', () => {
+            log('Page loaded');
+            const initSuccess = init();
+            if (initSuccess) {
+                animate();
+                checkWebXRSupport();
+            }
+        });
     </script>
 </body>
 </html>
