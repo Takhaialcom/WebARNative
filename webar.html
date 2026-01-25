@@ -461,16 +461,36 @@
                 if (hitTestSourceRequested === false) {
                     log('Requesting hit test source...');
                     
-                    session.requestReferenceSpace('viewer').then((referenceSpace) => {
-                        session.requestHitTestSource({ space: referenceSpace }).then((source) => {
-                            hitTestSource = source;
-                            log('Hit test source acquired');
-                        }).catch((error) => {
-                            log('Error getting hit test source: ' + error.message, true);
-                        });
-                    }).catch((error) => {
-                        log('Error getting reference space: ' + error.message, true);
-                    });
+                    // Try 'viewer' first, fallback to 'local' if not supported
+                    const tryReferenceSpace = async (spaceType) => {
+                        try {
+                            const refSpace = await session.requestReferenceSpace(spaceType);
+                            log(`Reference space '${spaceType}' acquired`);
+                            return refSpace;
+                        } catch (error) {
+                            log(`Reference space '${spaceType}' not supported: ${error.message}`, true);
+                            return null;
+                        }
+                    };
+                    
+                    (async () => {
+                        let viewerSpace = await tryReferenceSpace('viewer');
+                        if (!viewerSpace) {
+                            viewerSpace = await tryReferenceSpace('local');
+                        }
+                        
+                        if (viewerSpace) {
+                            session.requestHitTestSource({ space: viewerSpace }).then((source) => {
+                                hitTestSource = source;
+                                log('Hit test source acquired successfully!');
+                            }).catch((error) => {
+                                log('Error getting hit test source: ' + error.message, true);
+                            });
+                        } else {
+                            log('No compatible reference space found', true);
+                            updateStatus('Device does not support hit testing');
+                        }
+                    })();
 
                     session.addEventListener('end', () => {
                         hitTestSourceRequested = false;
@@ -524,8 +544,7 @@
 
                 const sessionInit = {
                     requiredFeatures: ['hit-test'],
-                    optionalFeatures: ['dom-overlay'],
-                    domOverlay: { root: document.getElementById('overlay') }
+                    optionalFeatures: ['dom-overlay', 'local']
                 };
 
                 const session = await navigator.xr.requestSession('immersive-ar', sessionInit);
